@@ -2,9 +2,13 @@
 //
 #include <stdio.h>
 #include <assert.h>
+
 #include <GLFW/glfw3.h>
-
-
+#if 1
+#include <vulkan/vulkan.h>
+#else
+#include <vulkan/vulkan.hpp>
+#endif
 
 int main()
 {
