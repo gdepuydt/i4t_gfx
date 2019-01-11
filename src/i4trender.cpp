@@ -159,6 +159,68 @@ VkCommandPool createCommandPool(VkDevice device, uint32_t familyIndex) {
 }
 	
 
+VkRenderPass createRenderPass(VkDevice device) {
+	
+	VkAttachmentDescription attachments[1] = {};
+	attachments[0].format = VK_FORMAT_R8G8B8A8_UNORM;
+	attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
+	attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+	attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+	attachments[0].stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+	attachments[0].stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+	attachments[0].finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+	VkAttachmentReference colorAttachments = { 0, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL };
+	
+	VkSubpassDescription subpass = {};
+	subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+	subpass.colorAttachmentCount = 1;
+	subpass.pColorAttachments = &colorAttachments;
+
+	VkRenderPassCreateInfo createInfo = { VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO };
+	createInfo.attachmentCount = sizeof(attachments) / sizeof(attachments[0]);
+	createInfo.pAttachments = attachments;
+	createInfo.subpassCount = 1;
+	createInfo.pSubpasses = &subpass;
+
+	VkRenderPass renderPass = 0;
+	VK_CHECK(vkCreateRenderPass(device, &createInfo, 0, &renderPass));
+	assert(renderPass);
+	return renderPass;
+}
+
+VkFramebuffer createFramebuffer(VkDevice device, VkRenderPass renderPass, VkImageView imageView, uint32_t width, uint32_t height) {
+	
+	VkFramebufferCreateInfo createInfo = { VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO };
+	createInfo.renderPass = renderPass;
+	createInfo.attachmentCount = 1;
+	createInfo.pAttachments = &imageView;
+	createInfo.width = width;
+	createInfo.height = height;
+	createInfo.layers = 1;
+
+	VkFramebuffer framebuffer = 0;
+	VK_CHECK(vkCreateFramebuffer(device, &createInfo, 0, &framebuffer));
+	return framebuffer;
+	
+}
+
+VkImageView createImageView(VkDevice device, VkImage image) {
+	
+	VkImageViewCreateInfo createInfo = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+	createInfo.image = image;
+	createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+	createInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+	createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+	createInfo.subresourceRange.levelCount = 1;
+	createInfo.subresourceRange.layerCount = 1;
+	VkImageView imageView = 0;
+	VK_CHECK(vkCreateImageView(device, &createInfo, 0, &imageView));
+	assert(imageView);
+	return imageView;
+}
+
+
 int main()
 {
 	assert(glfwInit());
@@ -198,9 +260,24 @@ int main()
 	VkQueue queue = 0;
 	vkGetDeviceQueue(device, familyIndex, 0, &queue);
 
+	VkRenderPass renderPass = createRenderPass(device);
+	assert(renderPass);
+	
 	VkImage swapchainImages[16]; //Shortcut: seriously?
 	uint32_t swapchainImageCount = sizeof(swapchainImages) / sizeof(swapchainImages[0]);
 	VK_CHECK(vkGetSwapchainImagesKHR(device, swapchain, &swapchainImageCount, swapchainImages));
+
+	VkImageView swapchainImageViews[16];
+	for (uint32_t i = 0; i < swapchainImageCount; i++) {
+		swapchainImageViews[i] = createImageView(device, swapchainImages[i]);
+		assert(swapchainImageViews[i]);
+	}
+
+	VkFramebuffer swapchainFramebuffers[16];
+	for (uint32_t i = 0; i < swapchainImageCount; i++) {
+		swapchainFramebuffers[i] = createFramebuffer(device, renderPass, swapchainImageViews[i], windowWidth, windowHeight);
+		assert(swapchainFramebuffers[i]);
+	}
 
 	VkCommandPool commandPool = createCommandPool(device, familyIndex);
 	assert(commandPool);
