@@ -122,11 +122,21 @@ VkSurfaceKHR createSurface(VkInstance instance, GLFWwindow *window) {
 #endif
 }
 
-VkSwapchainKHR createSwapchain(VkDevice device, VkSurfaceKHR surface, uint32_t width, uint32_t height, uint32_t familyIndex) {
+VkFormat getSwapchainFormat(VkPhysicalDevice physicalDevice, VkSurfaceKHR surface) {
+	VkSurfaceFormatKHR formats[32];
+	uint32_t formatCount = sizeof(formats) / sizeof(formats[0]);
+	VkResult result = vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surface, &formatCount, formats);
+	assert(formatCount > 0); //TODO: this code needs to handle either the formatCount being 0, or first element reporting VK_FORMAT_UNDEFINED
+	assert(result == VK_INCOMPLETE || result == VK_SUCCESS);
+	return formats[8].format;
+}
+
+
+VkSwapchainKHR createSwapchain(VkDevice device, VkSurfaceKHR surface, uint32_t width, uint32_t height, uint32_t familyIndex, VkFormat format) {
 	VkSwapchainCreateInfoKHR createInfo = { VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR };
 	createInfo.surface = surface;
 	createInfo.minImageCount = 2;
-	createInfo.imageFormat = VK_FORMAT_R8G8B8A8_UNORM; //Shortcut: some devices BGRA, not RGB, you need to find this out...
+	createInfo.imageFormat = format;//VK_FORMAT_R8G8B8A8_UNORM; //Shortcut: some devices BGRA, not RGB, you need to find this out...
 	createInfo.imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
 	createInfo.imageExtent.width = width;
 	createInfo.imageExtent.height = height;
@@ -134,6 +144,8 @@ VkSwapchainKHR createSwapchain(VkDevice device, VkSurfaceKHR surface, uint32_t w
 	createInfo.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 	createInfo.queueFamilyIndexCount = 1;
 	createInfo.pQueueFamilyIndices = &familyIndex;
+	createInfo.preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
+	createInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
 	createInfo.presentMode = VK_PRESENT_MODE_FIFO_KHR;
 
 	VkSwapchainKHR swapchain = 0;
@@ -159,10 +171,10 @@ VkCommandPool createCommandPool(VkDevice device, uint32_t familyIndex) {
 }
 	
 
-VkRenderPass createRenderPass(VkDevice device) {
+VkRenderPass createRenderPass(VkDevice device, VkFormat format) {
 	
 	VkAttachmentDescription attachments[1] = {};
-	attachments[0].format = VK_FORMAT_R8G8B8A8_UNORM;
+	attachments[0].format = format;
 	attachments[0].samples = VK_SAMPLE_COUNT_1_BIT;
 	attachments[0].loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
 	attachments[0].storeOp = VK_ATTACHMENT_STORE_OP_STORE;
@@ -205,12 +217,12 @@ VkFramebuffer createFramebuffer(VkDevice device, VkRenderPass renderPass, VkImag
 	
 }
 
-VkImageView createImageView(VkDevice device, VkImage image) {
+VkImageView createImageView(VkDevice device, VkImage image, VkFormat format) {
 	
 	VkImageViewCreateInfo createInfo = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
 	createInfo.image = image;
 	createInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
-	createInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+	createInfo.format = format;
 	createInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 	createInfo.subresourceRange.levelCount = 1;
 	createInfo.subresourceRange.layerCount = 1;
@@ -248,7 +260,10 @@ int main()
 
 	int windowWidth = 0, windowHeight = 0;
 	glfwGetWindowSize(window, &windowWidth, &windowHeight);
-	VkSwapchainKHR swapchain = createSwapchain(device, surface, windowWidth, windowHeight, familyIndex);
+	
+	VkFormat swapchainFormat = getSwapchainFormat(physicalDevice, surface);
+	
+	VkSwapchainKHR swapchain = createSwapchain(device, surface, windowWidth, windowHeight, familyIndex, swapchainFormat);
 	assert(swapchain);
 
 	VkSemaphore aquireSemaphore = createSemaphore(device);
@@ -260,16 +275,18 @@ int main()
 	VkQueue queue = 0;
 	vkGetDeviceQueue(device, familyIndex, 0, &queue);
 
-	VkRenderPass renderPass = createRenderPass(device);
+	VkRenderPass renderPass = createRenderPass(device, swapchainFormat);
 	assert(renderPass);
 	
-	VkImage swapchainImages[16]; //Shortcut: seriously?
+	VkImage swapchainImages[16];
 	uint32_t swapchainImageCount = sizeof(swapchainImages) / sizeof(swapchainImages[0]);
 	VK_CHECK(vkGetSwapchainImagesKHR(device, swapchain, &swapchainImageCount, swapchainImages));
+	VK_CHECK(vkGetSwapchainImagesKHR(device, swapchain, &swapchainImageCount, 0));
 
 	VkImageView swapchainImageViews[16];
 	for (uint32_t i = 0; i < swapchainImageCount; i++) {
-		swapchainImageViews[i] = createImageView(device, swapchainImages[i]);
+		swapchainImageViews[i] = createImageView(device, swapchainImages[i], swapchainFormat);
+
 		assert(swapchainImageViews[i]);
 	}
 
@@ -302,13 +319,30 @@ int main()
 		beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 		VK_CHECK(vkBeginCommandBuffer(commandBuffer, &beginInfo));
 
-		VkClearColorValue color = {1, 0, 1, 1};
-		VkImageSubresourceRange range = {};
+		VkClearColorValue color = { 48.f/255.f, 10.f / 255.f, 36.f/255.f, 1 };
+		VkClearValue clearColor = { color };
+
+		VkRenderPassBeginInfo passBeginInfo = { VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };
+		passBeginInfo.renderPass = renderPass;
+		passBeginInfo.framebuffer = swapchainFramebuffers[imageIndex];
+		passBeginInfo.renderArea.extent.width = windowWidth;
+		passBeginInfo.renderArea.extent.height = windowHeight;
+		passBeginInfo.clearValueCount = 1;
+		passBeginInfo.pClearValues = &clearColor;
+
+
+		vkCmdBeginRenderPass(commandBuffer, &passBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+		
+		//draw calls go here
+
+		vkCmdEndRenderPass(commandBuffer);
+		
+		/*VkImageSubresourceRange range = {};
 		range.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
 		range.levelCount = 1;
 		range.layerCount = 1;
-
-		vkCmdClearColorImage(commandBuffer, swapchainImages[imageIndex], VK_IMAGE_LAYOUT_GENERAL, &color, 1, &range);
+		
+		vkCmdClearColorImage(commandBuffer, swapchainImages[imageIndex], VK_IMAGE_LAYOUT_GENERAL, &color, 1, &range);*/ //--> required somehow to clear the window with te color... in the official stream this isn't necessary anymore?? 
 
 		VK_CHECK(vkEndCommandBuffer(commandBuffer));
 
@@ -322,9 +356,7 @@ int main()
 		submitInfo.pCommandBuffers = &commandBuffer;
 		submitInfo.signalSemaphoreCount = 1;
 		submitInfo.pSignalSemaphores = &releaseSemaphore;
-
-
-
+			   
 		vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE);
 		
 		VkPresentInfoKHR presentInfo = { VK_STRUCTURE_TYPE_PRESENT_INFO_KHR };
