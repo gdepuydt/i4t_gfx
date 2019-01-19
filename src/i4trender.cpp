@@ -230,6 +230,44 @@ VkImageView createImageView(VkDevice device, VkImage image, VkFormat format) {
 	VK_CHECK(vkCreateImageView(device, &createInfo, 0, &imageView));
 	assert(imageView);
 	return imageView;
+
+}
+
+VkShaderModule loadShader(VkDevice device, const char* path) {
+	FILE* file = fopen(path, "rb");
+	assert(file); // TODO: don't assert on file in production code
+	fseek(file, 0, SEEK_END);
+	long length = ftell(file);
+	assert(length >= 0);
+	fseek(file, 0, SEEK_SET);
+
+	char *buffer = new char[length];
+	assert(buffer);
+
+	size_t rc = fread(buffer, 1, length, file);
+	assert(rc == size_t(length));
+	fclose(file);
+
+	VkShaderModuleCreateInfo createInfo = { VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO };
+	createInfo.codeSize = length;
+	createInfo.pCode = reinterpret_cast<const uint32_t*>(buffer);
+
+	VkShaderModule shaderModule = 0;
+	VK_CHECK(vkCreateShaderModule(device, &createInfo, 0, &shaderModule));
+	assert(shaderModule);
+
+	return shaderModule;
+}
+
+VkPipeline createGraphicsPipeline(VkDevice device, VkPipelineCache pipelineCache, VkShaderModule vs, VkShaderModule fs) {
+	
+	// CONTINUE graphics pipeline implementation HERE!!
+
+	VkPipeline graphicsPipeline = 0;
+	VkGraphicsPipelineCreateInfo createInfo = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
+	vkCreateGraphicsPipelines(device, pipelineCache, 1, &createInfo, 0, &graphicsPipeline);
+	assert(graphicsPipeline);
+	return graphicsPipeline;
 }
 
 
@@ -275,9 +313,21 @@ int main()
 	VkQueue queue = 0;
 	vkGetDeviceQueue(device, familyIndex, 0, &queue);
 
+	VkShaderModule triangleVS = loadShader(device, "shaders/triangle.vert.spv");
+	assert(triangleVS);
+	VkShaderModule triangleFS = loadShader(device, "shaders/triangle.frag.spv");
+	assert(triangleFS);
+
 	VkRenderPass renderPass = createRenderPass(device, swapchainFormat);
 	assert(renderPass);
 	
+
+	// TODO: this is critical for performance!
+	VkPipelineCache pipelineCache= 0;
+
+	VkPipeline trianglePipeline = createGraphicsPipeline(device, pipelineCache, triangleVS, triangleFS);
+	assert(trianglePipeline);
+
 	VkImage swapchainImages[16];
 	uint32_t swapchainImageCount = sizeof(swapchainImages) / sizeof(swapchainImages[0]);
 	VK_CHECK(vkGetSwapchainImagesKHR(device, swapchain, &swapchainImageCount, swapchainImages));
@@ -334,6 +384,10 @@ int main()
 		vkCmdBeginRenderPass(commandBuffer, &passBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 		
 		//draw calls go here
+
+		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, trianglePipeline);
+		vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+
 
 		vkCmdEndRenderPass(commandBuffer);
 		
