@@ -259,12 +259,77 @@ VkShaderModule loadShader(VkDevice device, const char* path) {
 	return shaderModule;
 }
 
-VkPipeline createGraphicsPipeline(VkDevice device, VkPipelineCache pipelineCache, VkShaderModule vs, VkShaderModule fs) {
+VkPipelineLayout createPipelineLayout(VkDevice device)
+{
+	VkPipelineLayoutCreateInfo createInfo = { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
+
+	VkPipelineLayout layout = 0;
+	VK_CHECK(vkCreatePipelineLayout(device, &createInfo, 0, &layout));
+
+	return layout;
+}
+
+VkPipeline createGraphicsPipeline(VkDevice device, VkPipelineCache pipelineCache, VkRenderPass renderPass, VkShaderModule vs, VkShaderModule fs, VkPipelineLayout layout) {
 	
-	// CONTINUE graphics pipeline implementation HERE!!
+	
+	VkGraphicsPipelineCreateInfo createInfo = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
+
+	VkPipelineShaderStageCreateInfo stages[2] = {};
+	stages[0].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	stages[0].stage = VK_SHADER_STAGE_VERTEX_BIT;
+	stages[0].module = vs;
+	stages[0].pName = "main";
+	stages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+	stages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+	stages[1].module = fs;
+	stages[1].pName = "main";
+
+	createInfo.stageCount = sizeof(stages) / sizeof(stages[0]);
+	createInfo.pStages = stages;
+
+	VkPipelineVertexInputStateCreateInfo vertexInput = { VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO };
+	createInfo.pVertexInputState = &vertexInput;
+
+	VkPipelineInputAssemblyStateCreateInfo inputAssembly = { VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO };
+	inputAssembly.topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+	createInfo.pInputAssemblyState = &inputAssembly;
+
+	VkPipelineViewportStateCreateInfo viewportState = { VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO };
+	viewportState.viewportCount = 1;
+	viewportState.scissorCount = 1;
+	createInfo.pViewportState = &viewportState;
+
+	VkPipelineRasterizationStateCreateInfo rasterizationState = { VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO };
+	rasterizationState.lineWidth = 1.f;
+	createInfo.pRasterizationState = &rasterizationState;
+
+	VkPipelineMultisampleStateCreateInfo multisampleState = { VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO };
+	multisampleState.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
+	createInfo.pMultisampleState = &multisampleState;
+
+	VkPipelineDepthStencilStateCreateInfo depthStencilState = { VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO };
+	createInfo.pDepthStencilState = &depthStencilState;
+
+	VkPipelineColorBlendAttachmentState colorAttachmentState = {};
+	colorAttachmentState.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
+
+	VkPipelineColorBlendStateCreateInfo colorBlendState = { VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO };
+	colorBlendState.attachmentCount = 1;
+	colorBlendState.pAttachments = &colorAttachmentState;
+	createInfo.pColorBlendState = &colorBlendState;
+
+	VkDynamicState dynamicStates[] = { VK_DYNAMIC_STATE_VIEWPORT, VK_DYNAMIC_STATE_SCISSOR };
+
+	VkPipelineDynamicStateCreateInfo dynamicState = { VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO };
+	dynamicState.dynamicStateCount = sizeof(dynamicStates) / sizeof(dynamicStates[0]);
+	dynamicState.pDynamicStates = dynamicStates;
+	createInfo.pDynamicState = &dynamicState;
+
+	createInfo.layout = layout;
+	createInfo.renderPass = renderPass;
 
 	VkPipeline graphicsPipeline = 0;
-	VkGraphicsPipelineCreateInfo createInfo = { VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO };
+
 	vkCreateGraphicsPipelines(device, pipelineCache, 1, &createInfo, 0, &graphicsPipeline);
 	assert(graphicsPipeline);
 	return graphicsPipeline;
@@ -321,11 +386,12 @@ int main()
 	VkRenderPass renderPass = createRenderPass(device, swapchainFormat);
 	assert(renderPass);
 	
-
 	// TODO: this is critical for performance!
 	VkPipelineCache pipelineCache= 0;
-
-	VkPipeline trianglePipeline = createGraphicsPipeline(device, pipelineCache, triangleVS, triangleFS);
+	VkPipelineLayout triangleLayout = createPipelineLayout(device);
+	assert(triangleLayout);
+	
+	VkPipeline trianglePipeline = createGraphicsPipeline(device, pipelineCache, renderPass,triangleVS, triangleFS, triangleLayout);
 	assert(trianglePipeline);
 
 	VkImage swapchainImages[16];
@@ -383,6 +449,11 @@ int main()
 
 		vkCmdBeginRenderPass(commandBuffer, &passBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
 		
+		VkViewport viewport = { 0, float(windowHeight), float(windowWidth), -float(windowHeight), 0, 1 };
+		VkRect2D scissor = { {0, 0}, {uint32_t(windowWidth), uint32_t(windowHeight)} };
+
+		vkCmdSetViewport(commandBuffer, 0, 1, &viewport);
+		vkCmdSetScissor(commandBuffer, 0, 1, &scissor);
 		//draw calls go here
 
 		vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, trianglePipeline);
