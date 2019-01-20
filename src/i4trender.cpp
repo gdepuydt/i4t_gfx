@@ -56,11 +56,27 @@ VkInstance createInstance() {
 	return instance;
 }
 
+uint32_t getGraphicsQueueFamily(VkPhysicalDevice physicalDevice)
+{
+	VkQueueFamilyProperties queues[64];
+	uint32_t queueCount = sizeof(queues) / sizeof(queues[0]);
+	vkGetPhysicalDeviceQueueFamilyProperties(physicalDevice, &queueCount, queues);
+
+	for (uint32_t i = 0; i < queueCount; ++i)
+		if (queues[i].queueFlags & VK_QUEUE_GRAPHICS_BIT)
+			return i;
+
+	// TODO: this can be used in pickPhysicalDevice to pick rasterization-capable device
+	assert(!"No queue families support graphics, is this a compute-only device?");
+	return ~0u;
+}
+
 VkPhysicalDevice pickPhysicalDevice(VkPhysicalDevice *physicalDevices, uint32_t physicalDeviceCount) {
 	
 	for (uint32_t i = 0; i < physicalDeviceCount; i++) {
 		VkPhysicalDeviceProperties props;
 		vkGetPhysicalDeviceProperties(physicalDevices[i], &props);
+		
 		if (props.deviceType = VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
 			printf("Picking discrete GPU: %s\n", props.deviceName);
 			return physicalDevices[i];
@@ -80,8 +96,6 @@ VkPhysicalDevice pickPhysicalDevice(VkPhysicalDevice *physicalDevices, uint32_t 
 
 
 VkDevice createDevice(VkInstance instance, VkPhysicalDevice physicalDevice, uint32_t *familyIndex) {
-	
-	*familyIndex = 0; //SHORTCUT: This needs to be computed from queue properties; //TODO: this creates a validation error
 	
 	float queuePriorities[] = { 1.0f };
 
@@ -133,6 +147,7 @@ VkFormat getSwapchainFormat(VkPhysicalDevice physicalDevice, VkSurfaceKHR surfac
 
 
 VkSwapchainKHR createSwapchain(VkDevice device, VkSurfaceKHR surface, uint32_t width, uint32_t height, uint32_t familyIndex, VkFormat format) {
+	
 	VkSwapchainCreateInfoKHR createInfo = { VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR };
 	createInfo.surface = surface;
 	createInfo.minImageCount = 2;
@@ -347,11 +362,10 @@ int main()
 	uint32_t physicalDeviceCount = sizeof(physicalDevices) / sizeof(physicalDevices[0]);
 	VK_CHECK(vkEnumeratePhysicalDevices(instance, &physicalDeviceCount, physicalDevices));
 
-	//SHORTCUT: In production Vulkan applications you should handle the real case that the instance creation fails because of Vulkan incompatible hardware
 	VkPhysicalDevice physicalDevice = pickPhysicalDevice(physicalDevices, physicalDeviceCount);
 	assert(physicalDevice);
 
-	uint32_t familyIndex = 0;
+	uint32_t familyIndex = getGraphicsQueueFamily(physicalDevice);
 	VkDevice device = createDevice(instance, physicalDevice, &familyIndex);
 	assert(device);
 
@@ -360,6 +374,11 @@ int main()
 
 	VkSurfaceKHR surface = createSurface(instance, window);
 	assert(surface);
+
+	VkBool32 presentSupported = 0;
+	VK_CHECK(vkGetPhysicalDeviceSurfaceSupportKHR(physicalDevice, familyIndex, surface, &presentSupported));
+	//assert(presentSupported); // TODO: do we want to deal with this?
+
 
 	int windowWidth = 0, windowHeight = 0;
 	glfwGetWindowSize(window, &windowWidth, &windowHeight);
